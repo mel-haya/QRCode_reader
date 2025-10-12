@@ -18,7 +18,6 @@ export class QrController {
   ): Promise<UploadResponse> {
     const images = body?.images;
     const socketId = body?.socketId;
-    console.log('Received socketId:', socketId);
     if (!images || !Array.isArray(images) || images.length === 0) {
       return {
         message: 'No images provided',

@@ -29,7 +29,6 @@ export class QrGateway implements OnGatewayConnection, OnGatewayDisconnect {
     clientId: string,
     progress: { currentPage: number; totalPages: number },
   ) {
-    console.log('Sending progress update to', clientId, progress);
     this.server.to(clientId).emit('scan-progress', progress);
   }
 
