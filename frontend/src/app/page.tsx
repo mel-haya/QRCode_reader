@@ -1,103 +1,195 @@
-import Image from "next/image";
+"use client";
+import React, { useRef, useState } from "react";
+import { Box, Button, Typography, Paper, CssBaseline } from "@mui/material";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import * as pdfjs from "pdfjs-dist";
+import { useImagesUpload } from "@/services/qrcode";
+
+const workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.mjs",
+  import.meta.url
+).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+
+const darkTheme = createTheme({
+  palette: {
+    mode: "dark",
+  },
+});
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<string>("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+  const { mutate } = useImagesUpload();
+  const readFileData = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // reader.result will be a string when readAsDataURL is used
+        const result = reader.result;
+        if (typeof result === "string") {
+          resolve(result);
+        } else {
+          reject(new Error("Unexpected file reader result type"));
+        }
+      };
+      reader.onerror = (err) => {
+        reject(err);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const convertPdfToImages = async (
+    file: File
+  ): Promise<{ images: string[]; pageCount: number }> => {
+    const images: string[] = [];
+    const data = await readFileData(file);
+
+    // Use the imported pdfjs instance consistently
+    const loadingTask = pdfjs.getDocument(data);
+    const pdf = await loadingTask.promise;
+
+    const canvas = document.createElement("canvas");
+    for (let i = 0; i < pdf.numPages; i++) {
+      const page = await pdf.getPage(i + 1);
+      const viewport = page.getViewport({ scale: 1 });
+
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not get canvas 2D context");
+
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      // Render into the canvas element directly (pdfjs types require a canvas)
+      await page.render({ canvasContext: context, canvas, viewport }).promise;
+      images.push(canvas.toDataURL());
+    }
+    canvas.remove();
+    return { images, pageCount: pdf.numPages };
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
+      setMessage("");
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+    setUploading(true);
+    setMessage("");
+    try {
+      // First, convert the PDF to images and verify completeness
+      const { images, pageCount } = await convertPdfToImages(selectedFile);
+      if (images.length !== pageCount) {
+        setMessage(
+          `Conversion incomplete: expected ${pageCount} pages but got ${images.length} images.`
+        );
+        setUploading(false);
+        return;
+      }
+      console.log("All pages converted successfully:", images);
+      mutate(images, {
+        onSuccess: () => {
+          setMessage("Upload successful!");
+        }
+      });
+      // If conversion succeeded for all pages, proceed to upload the original file
+      // const formData = new FormData();
+      // formData.append("file", selectedFile);
+      // // Replace with your backend endpoint
+      // const response = await fetch("/api/upload", {
+      //   method: "POST",
+      //   body: formData,
+      // });
+      // if (response.ok) {
+      //   setMessage("Upload successful!");
+      // } else {
+      //   setMessage("Upload failed.");
+      // }
+    } catch (err) {
+      console.error(err);
+      setMessage("Error converting or uploading file.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <ThemeProvider theme={darkTheme}>
+      <CssBaseline />
+      <Typography
+        variant="h2"
+        align="center"
+        gutterBottom
+        sx={{ fontWeight: 700, mt: 10 }}
+      >
+        PDF QR Code Scanner
+      </Typography>
+      <Typography
+        variant="h6"
+        align="center"
+        color="text.secondary"
+        sx={{ mb: 4 }}
+      >
+        Upload a PDF and this app will scan for QR codes, return their values,
+        and check for errors in the process.
+      </Typography>
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="70vh"
+        bgcolor="background.default"
+      >
+        <Paper elevation={3} sx={{ p: 4, minWidth: 320 }}>
+          <Typography variant="h5" gutterBottom>
+            Upload PDF
+          </Typography>
+          <input
+            type="file"
+            accept="application/pdf"
+            style={{ display: "none" }}
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => fileInputRef.current?.click()}
+            sx={{ mb: 2 }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Choose PDF
+          </Button>
+          {selectedFile ? (
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              Selected: {selectedFile.name}
+            </Typography>
+          ) : (
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              No file selected
+            </Typography>
+          )}
+          <Button
+            variant="contained"
+            color="success"
+            onClick={handleUpload}
+            disabled={!selectedFile || uploading}
           >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+            {uploading ? "Uploading..." : "Upload"}
+          </Button>
+          {message && (
+            <Typography variant="body2" color="secondary" sx={{ mt: 2 }}>
+              {message}
+            </Typography>
+          )}
+        </Paper>
+      </Box>
+    </ThemeProvider>
   );
 }

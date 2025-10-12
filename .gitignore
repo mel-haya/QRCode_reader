@@ -1,0 +1,25 @@
+# dependencies
+node_modules
+/node_modules
+**/node_modules/
+
+# build outputs
+/dist
+/build
+
+# environment
+.env
+.env.*
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
