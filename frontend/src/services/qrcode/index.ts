@@ -1,12 +1,16 @@
 import {
-  useQuery,
   useMutation,
 } from '@tanstack/react-query'
 
 import axios from '@/config/axios'
 
-const imagesUpload = ({ images, socketId }) => {
-    return axios.post('/qr/upload-images/', { images, socketId })
+interface ImageUploadPayload {
+    images: string[],
+    socketId: string
+}
+
+const imagesUpload = (payload: ImageUploadPayload) => {
+    return axios.post('/qr/upload-images/', payload)
 }
 
 const useImagesUpload = () => {

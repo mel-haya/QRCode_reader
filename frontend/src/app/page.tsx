@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Box, Button, Typography, Paper, CssBaseline } from "@mui/material";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
-import * as pdfjs from "pdfjs-dist";
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { useImagesUpload } from "@/services/qrcode";
 import ProgressBar from "./components/progressBar";
 import ResultSection from "./components/resultSection";
@@ -13,9 +13,10 @@ const workerSrc = new URL(
 ).toString();
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
-import { io } from "socket.io-client";
+import io from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
-let socket = null;
+let socket: typeof Socket | null = null;
 
 const darkTheme = createTheme({
   palette: {
@@ -40,19 +41,19 @@ export default function Home() {
   useEffect(() => {
     // Clean up the socket connection when the component unmounts
     socket = io("http://127.0.0.1:8000");
+
     socket.on("connect", () => {
-      console.log("Connected to server with ID:", socket.id);
-      setSocketId(socket.id);
+      if(socket)
+        setSocketId(socket.id);
     });
 
-    socket.on("scan-progress", (data) => {
-      console.log("Progress update:", data);
+    socket.on("scan-progress", (data: { currentPage: number; totalPages: number }) => {
       setCurrentPage(data.currentPage);
       setTotalPages(data.totalPages);
       setStatus("scanning page " + data.currentPage + " of " + data.totalPages);
     });
 
-    socket.on("scan-complete", (data) => {
+    socket.on("scan-complete", (data: { totalPages: number; foundCodes: number }) => {
       setCurrentPage(data.totalPages);
 
       setStatus("Scan complete!");
@@ -134,6 +135,10 @@ export default function Home() {
       console.log("All pages converted successfully:", images);
       setStatus("uploading images to server");
       setStep(2);
+      if(!socketId){
+        console.log("unable to connect to socket")
+        return;
+      }
       mutate(
         { images, socketId },
         {
@@ -220,12 +225,14 @@ export default function Home() {
             </Typography>
           )}
         </Paper>
-        <ProgressBar
-          status={status}
-          step={step}
-          currentPage={currentPage}
-          totalPages={totalPages}
-        />
+        {status !== "idle" && (
+          <ProgressBar
+            status={status}
+            step={step}
+            currentPage={currentPage}
+            totalPages={totalPages}
+          />
+        )}
         <Button
           disabled={!data}
           onClick={() => {
