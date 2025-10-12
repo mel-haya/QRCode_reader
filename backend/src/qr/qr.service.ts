@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
 import jsQR from 'jsqr';
 import { QrGateway } from './qr.gateway';
+import { InjectModel } from '@nestjs/mongoose';
+import { QrCode, QrCodeDocument } from './schemas/qr-code.schema';
+import { Model } from 'mongoose';
+
 interface JsQrResult {
   data: string;
   location?: unknown;
@@ -32,7 +36,10 @@ const HORZ_GAP = 9;
 
 @Injectable()
 export class QrService {
-  constructor(private readonly qrGateway: QrGateway) {}
+  constructor(
+    private readonly qrGateway: QrGateway,
+    @InjectModel(QrCode.name) private qrCodeModel: Model<QrCodeDocument>,
+  ) {}
   async extractCells(buffer: Buffer) {
     const image = sharp(buffer);
 
@@ -117,7 +124,6 @@ export class QrService {
     const totalPages = pages.length;
     while (currentPage < totalPages) {
       const base64Data = pages[currentPage].split(';base64,').pop();
-      console.log(clientId, currentPage, totalPages);
       this.qrGateway.sendProgressUpdate(clientId, {
         currentPage: currentPage + 1,
         totalPages,
@@ -128,6 +134,17 @@ export class QrService {
       const imageBuffer = Buffer.from(base64Data, 'base64');
       const values = await this.extractCells(imageBuffer);
       ret.push(...values);
+
+      const successfulScans = values.filter(
+        code => code.status === 'success' && code.value,
+      );
+      if (successfulScans.length > 0) {
+        const codesToSave = successfulScans.map(scan => ({
+          value: scan.value,
+          base64Image: scan.base64Image,
+        }));
+        await this.qrCodeModel.insertMany(codesToSave);
+      }
       currentPage++;
     }
     this.qrGateway.sendScanComplete(clientId, {

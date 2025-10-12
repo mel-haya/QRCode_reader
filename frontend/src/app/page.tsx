@@ -220,10 +220,30 @@ export default function Home() {
             </Typography>
           )}
         </Paper>
-        <ProgressBar status={status} step={step} currentPage={currentPage} totalPages={totalPages} />
-        <Button disabled={!data} onClick={() => setShowResults(true)}>show results</Button>
+        <ProgressBar
+          status={status}
+          step={step}
+          currentPage={currentPage}
+          totalPages={totalPages}
+        />
+        <Button
+          disabled={!data}
+          onClick={() => {
+            setShowResults(true);
+            setStatus("idle");
+          }}
+        >
+          show results
+        </Button>
       </Box>
-      {showResults && data && <ResultSection data={data.data.code} handleClose={() => setShowResults(false)} />}
+      {showResults && data && (
+        <ResultSection
+          data={data.data.code}
+          handleClose={() => {
+            setShowResults(false);
+          }}
+        />
+      )}
     </ThemeProvider>
   );
 }
