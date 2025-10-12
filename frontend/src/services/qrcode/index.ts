@@ -5,8 +5,8 @@ import {
 
 import axios from '@/config/axios'
 
-const imagesUpload = (data: string[]) => {
-    return axios.post('/qr/upload-images/', { images: data})
+const imagesUpload = ({ images, socketId }) => {
+    return axios.post('/qr/upload-images/', { images, socketId })
 }
 
 const useImagesUpload = () => {

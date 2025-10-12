@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
 import jsQR from 'jsqr';
+import { QrGateway } from './qr.gateway';
 interface JsQrResult {
   data: string;
   location?: unknown;
@@ -31,6 +32,7 @@ const HORZ_GAP = 9;
 
 @Injectable()
 export class QrService {
+  constructor(private readonly qrGateway: QrGateway) {}
   async extractCells(buffer: Buffer) {
     const image = sharp(buffer);
 
@@ -91,7 +93,12 @@ export class QrService {
             status: 'success',
           });
         } else {
-          output.push({ value: '', base64Image: '', status: 'failed' });
+          output.push({
+            value: '',
+            base64Image:
+              'data:image/png;base64,' + base64String.data.toString('base64'),
+            status: 'failed',
+          });
         }
 
         currentCol += 1;
@@ -101,17 +108,32 @@ export class QrService {
     return output;
   }
 
-  async scanImageForQrCodes(pages: string[]) {
+  async scanImageForQrCodes(
+    pages: string[],
+    clientId: string,
+  ): Promise<ExtractedCode[]> {
     const ret: ExtractedCode[] = [];
-    for (let i = 0; i < pages.length; i++) {
-      const base64Data = pages[i].split(';base64,').pop();
+    let currentPage = 0;
+    const totalPages = pages.length;
+    while (currentPage < totalPages) {
+      const base64Data = pages[currentPage].split(';base64,').pop();
+      console.log(clientId, currentPage, totalPages);
+      this.qrGateway.sendProgressUpdate(clientId, {
+        currentPage: currentPage + 1,
+        totalPages,
+      });
       if (!base64Data) {
         throw new Error('Invalid base64 string format');
       }
       const imageBuffer = Buffer.from(base64Data, 'base64');
       const values = await this.extractCells(imageBuffer);
       ret.push(...values);
+      currentPage++;
     }
+    this.qrGateway.sendScanComplete(clientId, {
+      totalPages,
+      foundCodes: ret.length,
+    });
     return ret;
   }
 }
