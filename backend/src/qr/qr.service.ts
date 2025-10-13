@@ -12,6 +12,7 @@ interface JsQrResult {
 }
 
 interface ExtractedCode {
+  id: number;
   value: string;
   base64Image: string;
   status: string;
@@ -40,6 +41,15 @@ export class QrService {
     private readonly qrGateway: QrGateway,
     @InjectModel(QrCode.name) private qrCodeModel: Model<QrCodeDocument>,
   ) {}
+  private id = 0;
+
+  async checkDoubleWidth(buffer: Buffer, x: number, y: number) {
+    const gapImage = await sharp(buffer)
+      .extract({ left: x, top: y, width: 8, height: CELL_SIZE })
+      .toBuffer({ resolveWithObject: true });
+    const croppedImageStats = await sharp(gapImage.data).stats();
+    return croppedImageStats.channels[0].stdev > 0;
+  }
   async extractCells(buffer: Buffer) {
     const image = sharp(buffer);
 
@@ -47,7 +57,6 @@ export class QrService {
     const metadata = await image.metadata();
     const imageWidth = metadata.width ?? 0;
     const imageHeight = metadata.height ?? 0;
-
     let currentRow = 0;
     while (currentRow < 4) {
       let currentCol = 0;
@@ -62,14 +71,33 @@ export class QrService {
         const cropHeight = Math.min(CELL_SIZE, availableHeight);
 
         if (cropWidth <= 0 || cropHeight <= 0) {
-          console.warn(
-            'Skipping empty crop at',
-            left,
-            top,
-            cropWidth,
-            cropHeight,
-          );
           currentCol += 1;
+          continue;
+        }
+        const isDoubleWidth = await this.checkDoubleWidth(
+          buffer,
+          left + CELL_SIZE,
+          top,
+        );
+
+        if (isDoubleWidth) {
+          const doubleWidthImageBuffer = await sharp(buffer)
+            .extract({
+              left,
+              top,
+              width: cropWidth * 2 + HORZ_GAP,
+              height: cropHeight,
+            })
+            .toBuffer({ resolveWithObject: true });
+          const base64String = doubleWidthImageBuffer.data.toString('base64');
+          output.push({
+            id: this.id,
+            value: '',
+            base64Image: 'data:image/png;base64,' + base64String,
+            status: 'Invalid',
+          });
+          currentCol += 2;
+          this.id++;
           continue;
         }
 
@@ -93,25 +121,27 @@ export class QrService {
           .toBuffer({ resolveWithObject: true });
 
         const base64String = imageBuffer.data.toString('base64');
-        const isBlank = await this.checkForBlank(base64String);
+        const isBlank = await this.checkForBlank(imageBuffer.data);
         if (isBlank) {
           currentCol += 1;
           continue;
         }
         if (decodedQR && typeof decodedQR.data === 'string') {
           output.push({
+            id: this.id,
             value: decodedQR.data,
             base64Image: 'data:image/png;base64,' + base64String,
             status: 'success',
           });
         } else {
           output.push({
+            id: this.id,
             value: '',
             base64Image: 'data:image/png;base64,' + base64String,
             status: 'failed',
           });
         }
-
+        this.id++;
         currentCol += 1;
       }
       currentRow += 1;
@@ -119,8 +149,7 @@ export class QrService {
     return output;
   }
 
-  async checkForBlank(base64String: string) {
-    const imageBuffer = Buffer.from(base64String, 'base64');
+  async checkForBlank(imageBuffer: Buffer) {
     const cellStats = await sharp(imageBuffer).stats();
     return cellStats.channels[0].stdev === 0;
   }
@@ -132,6 +161,7 @@ export class QrService {
     const ret: ExtractedCode[] = [];
     let currentPage = 0;
     const totalPages = pages.length;
+    this.id = 0;
     while (currentPage < totalPages) {
       const base64Data = pages[currentPage].split(';base64,').pop();
       this.qrGateway.sendProgressUpdate(clientId, {
