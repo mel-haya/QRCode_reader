@@ -88,22 +88,26 @@ export class QrService {
           croppedImage.info.width,
           croppedImage.info.height,
         );
-        const base64String = await sharp(buffer)
+        const imageBuffer = await sharp(buffer)
           .extract({ left, top, width: cropWidth, height: cropHeight })
           .toBuffer({ resolveWithObject: true });
 
+        const base64String = imageBuffer.data.toString('base64');
+        const isBlank = await this.checkForBlank(base64String);
+        if (isBlank) {
+          currentCol += 1;
+          continue;
+        }
         if (decodedQR && typeof decodedQR.data === 'string') {
           output.push({
             value: decodedQR.data,
-            base64Image:
-              'data:image/png;base64,' + base64String.data.toString('base64'),
+            base64Image: 'data:image/png;base64,' + base64String,
             status: 'success',
           });
         } else {
           output.push({
             value: '',
-            base64Image:
-              'data:image/png;base64,' + base64String.data.toString('base64'),
+            base64Image: 'data:image/png;base64,' + base64String,
             status: 'failed',
           });
         }
@@ -113,6 +117,12 @@ export class QrService {
       currentRow += 1;
     }
     return output;
+  }
+
+  async checkForBlank(base64String: string) {
+    const imageBuffer = Buffer.from(base64String, 'base64');
+    const cellStats = await sharp(imageBuffer).stats();
+    return cellStats.channels[0].stdev === 0;
   }
 
   async scanImageForQrCodes(
